@@ -67,9 +67,14 @@ LANGUAGES = (
 
    
 def log(module,msg):
-  xbmc.log((u"### [%s-%s] - %s" % (__scriptname__,module,msg,)).encode('utf-8'),level=xbmc.LOGDEBUG ) 
+  xbmc.log((u"### [%s] - %s" % (module, msg,)).encode('utf-8'), level=xbmc.LOGDEBUG)
 
 def languageTranslate(lang, lang_from, lang_to):
   for x in LANGUAGES:
     if lang == x[lang_from] :
       return x[lang_to]
+
+def get_language_info(language):
+    for lang in LANGUAGES:
+        if lang[0] == language:
+            return {'name': lang[0], '2let': lang[2], '3let': lang[3]}

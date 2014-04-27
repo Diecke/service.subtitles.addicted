@@ -12,7 +12,9 @@ import xbmcplugin
 import shutil
 import unicodedata
 import re
-from AddictedUtilities import log, languageTranslate
+import socket
+import string
+
 from BeautifulSoup import BeautifulSoup
 
 __addon__ = xbmcaddon.Addon()
@@ -29,12 +31,11 @@ __temp__       = xbmc.translatePath( os.path.join( __profile__, 'temp') ).decode
 
 sys.path.append (__resource__)
 
+from AddictedUtilities import log, languageTranslate, get_language_info
+
 self_host = "http://www.addic7ed.com"
 self_release_pattern = re.compile("Version (.+), ([0-9]+).([0-9])+ MBs")
 self_release_filename_pattern = re.compile(".*\-(.*)\.")
-
-def compare_columns(b,a):
-    return cmp( a["sync"], b["sync"] ) or cmp( b["language_name"], a["language_name"] )
     
 def get_url(url):
     req_headers = {
@@ -56,88 +57,149 @@ def append_subtitle(item):
     listitem.setProperty("sync",  'true' if item["sync"] else 'false')
     listitem.setProperty("hearing_imp", 'true' if item["hearing_imp"] else 'false')
 
-    ## below arguments are optional, it can be used to pass any info needed in download function
-    ## anything after "action=download&" will be sent to addon once user clicks listed subtitle to downlaod
     url = "plugin://%s/?action=download&link=%s&filename=%s" % (__scriptid__,
                                                                 item['link'],
                                                                 item['filename'])
-    if 'find' in item:
-        url += "&find=%s" % item['find']
-    ## add it to list, this can be done as many times as needed for all subtitles found
     xbmcplugin.addDirectoryItem(handle=int(sys.argv[1]), url=url, listitem=listitem, isFolder=False)
 
 def query_TvShow(name, season, episode, langs, file_original_path):
     sublinks = []
+    
     name = name.lower().replace(" ", "_").replace("$#*!","shit").replace("'","") # need this for $#*! My Dad Says and That 70s show
     searchurl = "%s/serie/%s/%s/%s/addic7ed" %(self_host, name, season, episode)
+    
     socket.setdefaulttimeout(3)
-    page = urllib2.urlopen(searchurl)
+    request = urllib2.Request(searchurl)
+    request.add_header('Pragma', 'no-cache')
+    page = urllib2.build_opener().open(request)
     content = page.read()
     content = content.replace("The safer, easier way", "The safer, easier way \" />")
     soup = BeautifulSoup(content)
+    
+    file_name = str(os.path.basename(file_original_path)).split("-")[-1].lower()
+
     for subs in soup("td", {"class":"NewsTitle", "colspan" : "3"}):
+
       try:
         langs_html = subs.findNext("td", {"class" : "language"})
         fullLanguage = str(langs_html).split('class="language">')[1].split('<a')[0].replace("\n","")
         subteams = self_release_pattern.match(str(subs.contents[1])).groups()[0]
-        file_name = self_release_filename_pattern.match(str(os.path.basename(file_original_path))).groups()[0].lower()
-        if (str(subteams.lower()).find(str(file_name))) > -1:
+
+        if (str(subteams.replace("WEB-DL-", "").lower()).find(str(file_name))) > -1:
           hashed = True
         else:
           hashed = False
+
         try:
-          lang = languageTranslate(fullLanguage, 0, 2)
+          lang = get_language_info(fullLanguage)
         except:
           lang = ""
+
         statusTD = langs_html.findNext("td")
         status = statusTD.find("b").string.strip()
-        link = "%s%s"%(self_host,statusTD.findNext("td").find("a")["href"])
-        if status == "Completed" and (lang in langs) :
-           sublinks.append({'rating': '0', 'filename': "%s.S%.2dE%.2d-%s" %(name.replace("_", ".").title(), int(season), int(episode),subteams ), 'sync': hashed, 'link': link,
-                                 'lang': lang, 'hearing_imp': "0"})
-           #sublinks.append({'filename':"%s.S%.2dE%.2d-%s" %(name.replace("_", ".").title(), int(season), int(episode),subteams ),'link':link,'language_name':fullLanguage,'language_id':lang,'language_flag':"flags/%s.gif" % (lang,),'movie':"movie","ID":"subtitle_id","rating":"0","format":"srt","sync":hashed})
+
+        linkTD = statusTD.findNext("td")
+        link = "%s%s" % (self_host,linkTD.find("a")["href"])
+
+        if(subs.findNext("td", {"class":"newsDate", "colspan" : "2"}).findAll('img', {'title': 'Hearing Impaired'})):
+          HI = True
+        else:
+          HI = False
+
+        if status == "Completed" and (lang['3let'] in langs) :
+          sublinks.append({'rating': '0', 'filename': "%s.S%.2dE%.2d-%s" %(name.replace("_", ".").title(), int(season), int(episode),subteams ), 'sync': hashed, 'link': link, 'lang': lang, 'hearing_imp': HI})
       except:
-        print "Error"        
+        log(__name__, "ERROR IN BS")        
         pass      
+    
     sublinks.sort(key=lambda x: [not x['sync']])
+    log(__name__, "sub='%s'" % (sublinks))
+    
     for s in sublinks:
-        append_subtitle(s)
- 
-def query_Film(name, file_original_path,year, langs):
+      append_subtitle(s)
+        
+def query_Film(name, year, langs, file_original_path):
     sublinks = []
+    
     name = urllib.quote(name.replace(" ", "_"))
     searchurl = "%s/film/%s_(%s)-Download" %(self_host,name, str(year))
-    socket.setdefaulttimeout(5)
-    page = urllib2.urlopen(searchurl)
+    
+    socket.setdefaulttimeout(3)
+    request = urllib2.Request(searchurl)
+    request.add_header('Pragma', 'no-cache')
+    page = urllib2.build_opener().open(request)
     content = page.read()
     content = content.replace("The safer, easier way", "The safer, easier way \" />")
     soup = BeautifulSoup(content)
+    
+    file_name = str(os.path.basename(file_original_path)).split("-")[-1].lower()
+
     for subs in soup("td", {"class":"NewsTitle", "colspan" : "3"}):
+
       try:
         langs_html = subs.findNext("td", {"class" : "language"})
-        fullLanguage = str(langs_html).split('class="language">')[1].split('&nbsp;<a')[0].replace("\n","")
-        subteams = self_release_pattern.match(str(subs.contents[1])).groups()[0].lower()
-        file_name = os.path.basename(file_original_path).lower()
-        if (file_name.find(str(subteams))) > -1:
+        fullLanguage = str(langs_html).split('class="language">')[1].split('<a')[0].replace("\n","")
+        subteams = self_release_pattern.match(str(subs.contents[1])).groups()[0]
+
+        if (str(subteams.replace("WEB-DL-", "").lower()).find(str(file_name))) > -1:
           hashed = True
         else:
-          hashed = False  
+          hashed = False
+
         try:
-          lang = fullLanguage
+          lang = get_language_info(fullLanguage)
         except:
           lang = ""
+
         statusTD = langs_html.findNext("td")
         status = statusTD.find("b").string.strip()
-        link = "%s%s"%(self_host,statusTD.findNext("td").find("a")["href"])
-        if status == "Completed" and (lang in langs) :
-            sublinks.append({'filename':"%s-%s" %(name.replace("_", ".").title(),subteams ),'link':link,'language_name':fullLanguage,'language_id':lang,'language_flag':"flags/%s.gif" % (lang,),'movie':"movie","ID":"subtitle_id","rating":"0","format":"srt","sync":hashed})
+
+        linkTD = statusTD.findNext("td")
+        link = "%s%s" % (self_host,linkTD.find("a")["href"])
+
+        if(subs.findNext("td", {"class":"newsDate", "colspan" : "2"}).findAll('img', {'title': 'Hearing Impaired'})):
+          HI = True
+        else:
+          HI = False
+
+        if status == "Completed" and (lang['3let'] in langs) :
+          sublinks.append({'rating': '0', 'filename':"%s-%s" %(name.replace("_", ".").title(),subteams ), 'sync': hashed, 'link': link, 'lang': lang, 'hearing_imp': HI})
       except:
-        pass
-    return sublinks    
+        log(__name__, "ERROR IN BS")        
+        pass      
+    
+    sublinks.sort(key=lambda x: [not x['sync']])
+    log(__name__, "sub='%s'" % (sublinks))
+    
+    for s in sublinks:
+      append_subtitle(s)
+
+def search_manual(searchstr, languages, filename):
+    return false
+
+def search_filename(filename, languages):
+    title, year = xbmc.getCleanMovieTitle(filename)
+    log(__name__, "clean title: \"%s\" (%s)" % (title, year))
+    try:
+        yearval = int(year)
+    except ValueError:
+        yearval = 0
+    if title and yearval > 1900:
+        query_Film(title, year, item['3let_language'], filename)
+    else:
+        match = re.search(r'\WS(?P<season>\d\d)E(?P<episode>\d\d)', title, flags=re.IGNORECASE)
+        if match is not None:
+            tvshow = string.strip(title[:match.start('season')-1])
+            season = string.lstrip(match.group('season'), '0')
+            episode = string.lstrip(match.group('episode'), '0')
+            query_TvShow(tvshow, season, episode, item['3let_language'], filename)
+        else:
+            search_manual(filename, item['3let_language'], filename)
+
 
 def Search(item):
     filename = os.path.splitext(os.path.basename(item['file_original_path']))[0]
-    log(__name__, "Search_subscene='%s', filename='%s', addon_version=%s" % (item, filename, __version__))
+    log(__name__, "Search_addicted='%s', filename='%s', addon_version=%s" % (item, filename, __version__))
 
     if item['mansearch']:
         search_manual(item['mansearchstr'], item['3let_language'], filename)
@@ -151,12 +213,16 @@ def Search(item):
   
 def download(link):
     subtitle_list = []
-    
+
+    if xbmcvfs.exists(__temp__):
+        shutil.rmtree(__temp__)
+    xbmcvfs.mkdirs(__temp__)
+
     file = os.path.join(__temp__, "adic7ed.srt")
 
     f = get_url(link)
 
-    local_file_handle = open(file, "w" + "b")
+    local_file_handle = open(file, "wb")
     local_file_handle.write(f)
     local_file_handle.close() 
     
@@ -235,13 +301,10 @@ if params['action'] == 'search' or params['action'] == 'manualsearch':
         stackPath = item['file_original_path'].split(" , ")
         item['file_original_path'] = stackPath[0][8:]
 
-    search(item)
+    Search(item)
 
 elif params['action'] == 'download':
-    ## we pickup all our arguments sent from def Search()
     subs = download(params["link"])
-    ## we can return more than one subtitle for multi CD versions, for now we are still working out how to handle that
-    ## in XBMC core
     for sub in subs:
         listitem = xbmcgui.ListItem(label=sub)
         xbmcplugin.addDirectoryItem(handle=int(sys.argv[1]), url=sub, listitem=listitem, isFolder=False)

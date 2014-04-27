@@ -142,9 +142,9 @@ def Search(item):
     if item['mansearch']:
         search_manual(item['mansearchstr'], item['3let_language'], filename)
     elif item['tvshow']:
-        query_tvshow(item['tvshow'], item['season'], item['episode'], item['3let_language'], filename)
+        query_TvShow(item['tvshow'], item['season'], item['episode'], item['3let_language'], filename)
     elif item['title'] and item['year']:
-        query_movie(item['title'], item['year'], item['3let_language'], filename)
+        query_Film(item['title'], item['year'], item['3let_language'], filename)
     else:
         search_filename(filename, item['3let_language'])
 

@@ -10,8 +10,7 @@
                library="service.py"/>
     <extension point="xbmc.addon.metadata">
         <summary lang="en">Get subtitles from Addic7ed.com</summary>
-        <description lang="en">Addic7ed
-        </description>
+        <description lang="en">Addic7ed</description>
         <disclaimer lang="en"/>
         <platform>all</platform>
         <language/>
